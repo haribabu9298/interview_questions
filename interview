@@ -1,56 +1,256 @@
 1. What happens internally when a request hits a Load Balancer before reaching an application server?
+    "When a request reaches a Load Balancer, it first accepts the client connection
+     It continuously performs health checks on backend servers and uses a load-balancing algorithm, such as Round Robin or Least Connections, to select a healthy server. 
+     The request is then forwarded to the chosen application server, which processes it by interacting with databases, caches, or other services as needed. 
+     The response is returned through the Load Balancer to the client.
+
 2. How would you troubleshoot a Kubernetes pod stuck in CrashLoopBackOff?
+    k describe the pod to check for events and error messages.
+    k logs <pod-name> to view the container logs for any application errors.
+    k get events to see if there are any cluster-level issues affecting the pod.
+
 3. A deployment was successful but users report 502/503 errors. What could be the possible reasons?
+    application server misconfiguration, backend service unavailability, network issues, or Load Balancer misrouting. 
+    Check server logs, health checks, and network connectivity to identify the root cause.
+
 4. What steps would you take if a CI/CD pipeline suddenly starts failing after working for months?
+    Review recent changes in the codebase, pipeline configuration, and dependencies.
+    Check for any updates or changes in the CI/CD tools or environment.
+    Analyze the error logs and test results to pinpoint the failure point.
+    Roll back to a previous stable state if necessary and implement fixes before re-running the pipeline.
+
 5. How does Horizontal Pod Autoscaler (HPA) decide when to scale pods?
+    HPA monitors metrics such as CPU utilization, memory usage, or custom metrics defined by the user. 
+    It compares the current metric values against the target thresholds set in the HPA configuration. 
+    If the metrics exceed the target for a specified duration, HPA triggers scaling actions to increase or decrease the number of pods accordingly.
+
 6. Your CPU usage spikes to 95% in production after a new release. How will you investigate?
+    Check the application logs for any errors or performance bottlenecks introduced by the new release.
+    Monitor system metrics (CPU, memory, disk I/O) to identify resource-intensive processes.
+    Use profiling tools to analyze the application's performance and identify inefficient code paths.
+    Review recent changes in the codebase that could have caused increased CPU usage.
+    Consider rolling back the release if the issue persists and implement fixes before redeploying.
+
 7. How do you implement zero downtime deployments in Kubernetes?
+    Use rolling updates to gradually replace old pods with new ones while maintaining service availability.
+    Configure readiness probes to ensure that new pods are only added to the service once they are fully operational.
+    Use a Load Balancer or Ingress controller to manage traffic routing and ensure that requests are directed to healthy pods.
+    Monitor the deployment process and application performance to detect any issues early and take corrective actions if needed.
+
 8. A Docker container exits immediately after starting. How do you debug it?
+    Check the container logs using docker logs <container-id> to see if there are any error messages or stack traces.
+    Verify the Dockerfile and entrypoint command to ensure that the application is configured correctly.
+    Run the container interactively using docker run -it <image> /bin/bash to inspect the environment and dependencies.
+    Check for missing environment variables, configuration files, or required services that the application depends on.
+    Review resource limits and constraints that may be causing the container to exit prematurely.
+
 9. What is the difference between Infrastructure as Code and Configuration Management?
+    
+    Infrastructure as Code (IaC) is the practice of managing and provisioning infrastructure resources (like servers, networks, and storage) using code and automation tools. It allows for version control, repeatability, and consistency in infrastructure deployment.
+
+    Configuration Management, on the other hand, focuses on managing the configuration of existing infrastructure and software. It ensures that systems are configured correctly and consistently across environments, often using tools like Ansible, Puppet, or Chef to automate configuration tasks.
+
 10. If a database suddenly becomes slow, what metrics would you check first?
+    Check database performance metrics such as query execution time, slow queries, and the number of active connections.
+    Monitor CPU and memory usage on the database server to identify resource bottlenecks.
+    Review disk I/O metrics to see if there are any read/write performance issues.
+    Check for locks or contention issues that may be causing delays in query processing.
+    Analyze recent changes in the database schema, indexes, or configuration that could have impacted performance.
+
 11. Your Prometheus alerts are firing continuously even though the system looks healthy. What could be wrong?
+    The alerting rules may be misconfigured, leading to false positives.
+    There could be a delay in metric collection or processing, causing outdated data to trigger alerts.
+    Check for any changes in the Prometheus configuration or alerting rules that may have introduced errors.
+    Verify that the metrics being monitored are accurate and reflect the current state of the system.
+    Consider adjusting alert thresholds or adding additional conditions to reduce noise and improve alert accuracy.
+
 12. A Kubernetes node goes into NotReady state. What troubleshooting steps would you take?
+    Check the node status using kubectl get nodes to confirm the NotReady state.
+    Review the node's system logs (e.g., /var/log/syslog or /var/log/messages) for any errors or warnings.
+    Verify that the kubelet service is running and healthy on the node.
+    Check for network connectivity issues between the node and the Kubernetes control plane.
+    Inspect resource usage (CPU, memory, disk) on the node to ensure it is not overloaded.
+    Restart the kubelet service or reboot the node if necessary to restore its readiness state.
+
 13. What is the difference between Liveness Probe and Readiness Probe in Kubernetes?
+    A Liveness Probe checks if a container is still running and healthy. If the liveness probe fails, Kubernetes will restart the container to recover from a potential failure.
+
+    A Readiness Probe checks if a container is ready to accept traffic. If the readiness probe fails, Kubernetes will remove the pod from the service endpoints, preventing it from receiving traffic until it becomes ready again.
+
 14. How would you secure secrets in a CI/CD pipeline?
 15. How do you investigate memory leaks in a containerized application?
-16. Your Terraform deployment failed halfway. How do you recover from the inconsistent state?
-17. What are the key SLIs, SLOs, and SLAs you track for a production system?
-18. A microservice suddenly starts returning high latency. What tools would you use to debug it?
-19. How would you design a highly available system that can handle traffic spikes during peak sales?
-20. If multiple monitoring alerts fire at the same time, how do you prioritize incident response?
+    memory leaks can be investigated by monitoring the application's memory usage over time using tools like Prometheus and Grafana. 
+    Profiling tools such as pprof (for Go applications) or VisualVM (for Java applications) can help identify memory allocation patterns and pinpoint the source of leaks. 
+    Reviewing code for improper resource management, such as unclosed connections or references, is also essential. 
+    Additionally, running stress tests and analyzing heap dumps can provide insights into memory consumption and potential leaks.
 
+16. Your Terraform deployment failed halfway. How do you recover from the inconsistent state?
+    
+    First, review the Terraform error messages to understand the cause of the failure. 
+    terraform sate list and compare with real world infra which are created
+    Use terraform plan to identify the current state of resources and any discrepancies. 
+    and terraform refresh to update the state file with the actual infrastructure state.
+    If necessary, manually fix any issues in the infrastructure that may have caused the failure. 
+    Use terraform state rm , state mv , terraform import  commands to remove or modify resources in the state file if they are inconsistent with the actual infrastructure. 
+    After resolving the issues, run terraform apply again to complete the deployment. 
+    Consider implementing state locking and version control for the state file to prevent future inconsistencies.
+
+17. What are the key SLIs, SLOs, and SLAs you track for a production system?
+    
+    Key Service Level Indicators (SLIs) for a production system may include metrics such as request latency, error rate, availability, and throughput. These indicators provide insights into the performance and reliability of the system.
+
+    Service Level Objectives (SLOs) are specific targets set for SLIs, such as maintaining 99.9% availability or keeping request latency below 200 milliseconds. SLOs help define acceptable performance levels and guide operational decisions.
+
+    Service Level Agreements (SLAs) are formal agreements between service providers and customers that outline the expected level of service, including penalties for failing to meet agreed-upon SLOs. SLAs provide a contractual framework for accountability and customer satisfaction.
+
+18. A microservice suddenly starts returning high latency. What tools would you use to debug it?
+    microservice latency issues can be debugged using a combination of monitoring and tracing tools. Prometheus and Grafana can be used to monitor metrics such as request latency, error rates, and resource utilization. Distributed tracing tools like Jaeger or Zipkin can help trace requests across microservices to identify bottlenecks or slow components. Additionally, analyzing application logs with tools like ELK Stack (Elasticsearch, Logstash, Kibana) can provide insights into errors or performance issues. Profiling tools specific to the programming language used in the microservice can also help identify inefficient code paths or resource-intensive operations.
+19. How would you design a highly available system that can handle traffic spikes during peak sales?
+    designing a highly available system to handle traffic spikes during peak sales involves several key strategies:
+    1. Load Balancing: Use load balancers to distribute incoming traffic across multiple servers or instances, ensuring that no single server becomes a bottleneck.
+    2. Auto Scaling: Implement auto-scaling policies to automatically add or remove instances based on traffic demand, ensuring that the system can handle sudden spikes without degradation in performance.
+    3. Redundancy: Deploy services across multiple availability zones or regions to ensure that the system remains operational even if one zone or region experiences an outage.
+    4. Caching: Use caching mechanisms (e.g., Redis, Memcached) to store frequently accessed data, reducing the load on backend services and improving response times.
+    5. Content Delivery Network (CDN): Utilize a CDN to cache and deliver static content closer to users, reducing latency and improving load times during high traffic periods.
+    6. Monitoring and Alerting: Implement comprehensive monitoring and alerting to detect performance issues or failures early, allowing for proactive incident response and mitigation.
+    7. Database Optimization: Use database replication, sharding, and indexing strategies to ensure that the database can handle increased read and write loads during peak traffic.  
+
+20. If multiple monitoring alerts fire at the same time, how do you prioritize incident response?
+    monitoring alerts can be prioritized based on the severity and impact of the issues they represent. Critical alerts that indicate a complete service outage or significant degradation in performance should be addressed first, as they have the highest impact on users. Alerts related to security breaches or data loss should also be prioritized due to their potential long-term consequences. Less critical alerts, such as minor performance issues or warnings, can be addressed after the most urgent incidents have been resolved. Additionally, consider the dependencies between services; if one alert is causing cascading failures in other systems, it should be prioritized accordingly.
 
 1. Difference between Public and Private Subnet?
-2. How does Internet Gateway work?
+    public subnets are designed to host resources that need to be accessible from the internet, such as web servers. They have a route to an Internet Gateway, allowing inbound and outbound traffic from the internet. 
+    Private subnets, on the other hand, are used for resources that should not be directly accessible from the internet, such as databases or application servers. 
+    They do not have a direct route to the Internet Gateway and typically rely on a NAT Gateway or NAT instance for outbound internet access.
+    
 3. What is NAT Gateway?
+    A NAT (Network Address Translation) Gateway is a managed service that enables instances in a private subnet to connect to the internet or other AWS services while preventing inbound traffic from the internet. 
+    It allows outbound traffic from private instances to access external resources, such as software updates or APIs, while keeping those instances secure and isolated from direct internet exposure. 
+    NAT Gateways are highly available and scalable, making them suitable for production environments where private instances need reliable internet access without compromising security.
+
 4. How do you connect to a private EC2 instance?
+    To connect to a private EC2 instance, you typically use a bastion host (also known as a jump server) that resides in a public subnet. The steps are as follows:
+    1. Connect to the bastion host using SSH from your local machine.
+    2. From the bastion host, initiate an SSH connection to the private EC2 instance using its private IP address.
+    3. Ensure that the security groups and network ACLs are configured to allow SSH traffic from the bastion host to the private instance.
+    4. Optionally, you can use SSH agent forwarding or set up a VPN connection for secure access to the private instance without exposing it directly to the internet.
+
 5. What to check if S3 Put/Get is failing?
+    - Check the IAM policies and bucket policies to ensure the necessary permissions are granted.
+    - Verify the network connectivity and VPC endpoints if accessing S3 from a VPC.
+    - Ensure the S3 bucket exists and the object key is correct.
+    - Check for any service limits or throttling issues.
+
 6. How does IAM policy evaluation work?
+    IAM policy evaluation works by determining whether a request is allowed or denied based on the policies attached to the user, group, or role making the request. The evaluation process follows these steps:
+    1. Collect all applicable policies: This includes identity-based policies (attached to users, groups, or roles) and resource-based policies (attached to resources like S3 buckets).
+    2. Evaluate each policy statement: Each statement is evaluated in order, checking for explicit Allow or Deny actions.
+    3. Determine the final decision: If any policy explicitly denies the action, the request is denied. If there are no explicit denies and at least one policy allows the action, the request is allowed. If there are no applicable policies that allow the action, the request is denied by default.
+    4. Consider conditions: Policies may include conditions that must be met for the Allow or Deny to apply, such as IP address restrictions or time-based access.
 7. How do you ensure zero downtime in RDS upgrade?
+    - Use Multi-AZ deployments to ensure high availability.
+    - Perform upgrades during maintenance windows.
+    - Test upgrades in a staging environment before production.
+    - Use read replicas to offload read traffic during the upgrade.
 8. What is Blue-Green deployment in RDS?
+    Blue-Green deployment in RDS involves maintaining two separate environments: the blue environment (current production) and the green environment (new version). The steps are as follows:
+    1. Deploy the new version to the green environment.
+    2. Test the green environment to ensure it works correctly.
+    3. Switch traffic from the blue environment to the green environment.
+    4. Monitor the green environment for any issues.
+    5. Decommission the blue environment if everything is stable.
+
 9. What happens during Multi-AZ failover?
+    During a Multi-AZ failover, Amazon RDS automatically switches to a standby replica in another Availability Zone if the primary instance fails. The steps are as follows:
+    1. Detect failure: RDS monitors the primary instance and detects any failure.
+    2. Promote standby: The standby instance is promoted to become the new primary.
+    3. Update DNS: RDS updates the DNS record to point to the new primary instance.
+    4. Resume operations: Applications continue to operate with minimal downtime.
+
 10. Difference between Security Group and NACL?
+    
+    Security Groups (SGs) are stateful firewalls that control inbound and outbound traffic for EC2 instances. 
+    They allow or deny traffic based on rules defined for specific protocols, ports, and IP addresses. 
+    SGs are associated with instances and maintain the state of connections, meaning that if an inbound request is allowed, the response is automatically allowed.
+
+    Network Access Control Lists (NACLs) are stateless firewalls that control inbound and outbound traffic at the subnet level. 
+    They allow or deny traffic based on rules defined for specific protocols, ports, and IP addresses. 
+    NACLs do not maintain the state of connections, so both inbound and outbound rules must be explicitly defined to allow traffic in both directions.
 11. Difference between cp and mv?
 12. What are permission numbers (4,2,1)?
 13. How to give read & execute permission to a specific user?
 14. How to check running processes?
 15. What is a zombie process?
+    zombie process is a process that has completed execution but still has an entry in the process table. 
+    This occurs when the parent process has not yet read the exit status of the child process, leaving it in a "defunct" state. 
+    Zombie processes do not consume CPU or memory resources, but they do occupy a slot in the process table, 
+    which can lead to resource exhaustion if many zombies accumulate. 
+    To handle zombie processes, the parent process should be designed to properly wait for its child processes to terminate and clean up their exit statuses.
 16. How to check disk usage?
+    You can use the `df` command to check disk space usage and the `du` command to check directory space usage.
 17. Explain your deployment process end-to-end.
 18. What happens after deployment?
 19. What to do if alerts spike after release?
 20. How do you rollback?
 21. Difference between Blue-Green and Rolling deployment?
 22. How does Grafana communicate with Prometheus?
+
+    Prometheus exposes a REST API that Grafana uses to query metrics data. 
+    Grafana sends HTTP requests to Prometheus endpoints, specifying the desired metrics and time ranges.
+    Prometheus processes these queries, retrieves the relevant data from its time-series database, and returns the results to Grafana. 
+    Grafana then visualizes this data in dashboards, allowing users to monitor and analyze system performance in real-time.
 23. What is PromQL?
+  PromQL (Prometheus Query Language) is a powerful query language used to retrieve and manipulate time-series data stored in Prometheus.
+   It allows users to select and aggregate metrics, apply functions, and perform calculations on the data. 
+   PromQL supports a wide range of operations, including filtering by labels, calculating rates, and generating summaries or statistical analyses. 
+   It is designed to be flexible and expressive, enabling users to create complex queries for monitoring and alerting purposes.
 24. What is rate() function?
+    The `rate()` function in PromQL calculates the per-second average rate of increase of a counter over a specified time range. It is commonly used to measure the rate of events, such as requests or errors, over time.
 25. How do you parameterize dashboards?
 26. What monitoring tools are available in AWS?
+    AWS provides a variety of monitoring tools to help track the performance and health of your resources. Some of the key monitoring tools include:
+    - Amazon CloudWatch: A comprehensive monitoring service that collects and tracks metrics, logs, and events for AWS resources and applications. It allows you to set alarms, visualize metrics, and gain insights into system performance.
+    - AWS X-Ray: A distributed tracing service that helps analyze and debug applications   by providing insights into request flows and performance bottlenecks.
+    - AWS CloudTrail: A service that records API calls and user activity across your AWS account, enabling you to monitor and audit actions taken on your resources.
+    - AWS Trusted Advisor: A  tool that provides real-time guidance to help optimize your AWS environment for cost, performance, security, and fault tolerance.   
+
 27. Production is down at 11 PM – what will you do?
+    productions issues at night require a structured approach to quickly identify and resolve the problem. Here are the steps I would take:
+    1. Assess the situation: Gather information about the issue, including error messages, logs, and any recent changes or deployments that may have contributed to the outage.
+    2. Notify stakeholders: Inform relevant team members, including developers, operations staff, and management, about the outage and provide updates on the situation.
+    3. Prioritize actions: Determine the severity of the issue    and prioritize actions based on the impact on users and business operations.
+    4. Troubleshoot the problem: Use monitoring tools, logs, and diagnostic commands to identify the root cause of the outage. This may involve checking server health, network connectivity, database status, and application performance.
+    5. Implement a fix: Once the root cause is identified, implement a solution to resolve the issue. This may involve rolling back a recent deployment, restarting services, or applying configuration changes.
+    6. Validate the fix: After implementing the solution, verify that the system is functioning correctly and that users can access the application without issues.
+    7. Conduct a post-mortem: After the incident is resolved, conduct a post-mortem analysis to identify the root cause, document lessons learned, and implement preventive measures to avoid similar issues in the future    
+
 28. CPU is 100% after deployment – next steps?
+    When CPU usage spikes to 100% after a deployment, it's crucial to quickly identify the cause and mitigate the impact. Here are the steps I would take:
+    1. Assess the situation: Gather information about the issue, including metrics, logs, and any recent changes or deployments that may have contributed to the spike.
+    2. Notify stakeholders: Inform relevant team members, including developers, operations staff, and management, about the issue and provide updates on the situation.
+    3. Prioritize actions: Determine the severity of the issue and prioritize actions based on the impact on users and business operations.
+    4. Troubleshoot the problem: Use monitoring tools, logs, and diagnostic commands to identify the root cause of the CPU spike. This may involve checking server health, application performance, and resource utilization.
+    5. Implement a fix: Once the root cause is identified, implement a solution to resolve the issue. This may involve optimizing code, scaling resources, or rolling back a recent deployment.
+    6. Validate the fix: After implementing the solution, verify that the system is functioning correctly and that CPU usage has returned to normal levels.
+    7. Conduct a post-mortem: After the incident is resolved, conduct a post-mortem analysis to identify the root cause, document lessons learned, and implement preventive measures to avoid similar issues in the future.
+
 29. Instance is unhealthy – how to handle?
+
+  When an instance is marked as unhealthy, it indicates that it is not functioning correctly and may be impacting the overall performance of the system. Here are the steps I would take to handle an unhealthy instance:
+  1. Assess the situation: Gather information about the instance, including metrics, logs, and any recent changes or deployments that may have contributed to the issue.
+  2. Notify stakeholders: Inform relevant team members, including developers, operations staff, and management, about the unhealthy instance and provide updates on the situation.     
 30. S3 bucket suddenly inaccessible – troubleshooting steps?
+    
+  When an S3 bucket becomes suddenly inaccessible, it can disrupt application functionality and data access. Here are the steps I would take to troubleshoot the issue:
+  1. Check permissions: Verify that the IAM policies and bucket policies allow the necessary access for the user or application trying to access the bucket.
+  2. Review network connectivity: Ensure that there are no network issues preventing access to S3, such as VPC endpoint misconfigurations or firewall rules blocking traffic.
+  3. Validate bucket existence: Confirm that the S3 bucket still exists and that the object key being accessed is correct.
+  4. Check for service limits: Review AWS service limits and quotas to ensure that you have not exceeded any limits that could affect S3 access.
+  5. Examine recent changes: Investigate any recent changes to the bucket configuration, such as enabling versioning, changing encryption settings, or modifying access control lists (ACLs).
+  6. Use AWS CloudTrail: Check CloudTrail logs for any API calls related to the S3 bucket to identify any unauthorized access attempts or configuration changes.
+  7. Contact AWS Support: If the issue persists after performing these checks, reach out to AWS Support for further assistance in diagnosing and resolving the problem.
 31. Multiple alerts triggered – how to prioritize?
+    
 
 
 
