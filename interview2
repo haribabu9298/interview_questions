@@ -1,0 +1,20 @@
+1. How would you design a multi-region Kubernetes architecture for high availability?
+2. Your Kubernetes cluster is healthy, but requests intermittently return 503. How would you troubleshoot it?
+3. How do you perform a zero-downtime Kubernetes cluster upgrade in production?
+4. How would you migrate a stateful application to Kubernetes with minimal downtime?
+5. Design a GitOps workflow for 20+ teams with independent release cycles.
+6. Your CI/CD pipeline takes 30 minutes. How would you reduce it to under 5 minutes?
+7. How do you design a rollback strategy that works even if the deployment stage fails?
+8. How would you implement multi-environment CI/CD while preventing configuration drift?
+9. Terraform state is 300 MB and planning takes 15 minutes. How would you optimize it?
+10. Terraform partially created infrastructure before failing. How would you recover safely?
+11. How do you implement runtime security beyond image vulnerability scanning?
+12. How would you secure secrets for 100+ microservices without exposing credentials?
+13. How do you design SLO-based alerting that minimizes alert fatigue?
+14. How do you correlate logs, metrics, and traces during a production incident?
+15. Design a self-healing platform for critical production services.
+16. How would you handle cascading failures across multiple microservices?
+17. Your cloud bill suddenly increased by 40% overnight. How would you investigate it?
+18. How do you design a disaster recovery strategy with defined RTO and RPO requirements?
+19. A deployment succeeds, but latency increases from 80 ms to 2 seconds. Walk me through your debugging approach.
+20.  Explain the most challenging production incident you've handled and the architectural improvements you made afterward.
