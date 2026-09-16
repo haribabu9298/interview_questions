@@ -1,11 +1,19 @@
-# Linux Administration — Senior Reference & Interview Prep
+# Linux Administration — From Zero to Senior
 
-Target: **Linux Admin / SRE, ~8 years experience**. Assumes you know the basics; focuses on
-*why*, *how it breaks*, and *how you prove it*.
+A single reference that **starts from first principles** and ends at senior interview depth.
+
+**How to read this:**
+
+- **New to a topic?** Read [Part 0](#part-0-start-here--the-mental-model) first, then the
+  "🔰 **In plain English**" boxes. They explain every hard idea with an analogy, no jargon.
+- **Revising for an interview?** Skip to the tables, the ⚠️ **Gotcha** boxes, and
+  [Part 14](#part-14-interview-preparation).
+
+Being able to explain these ideas *simply* is exactly what a senior interview tests. If you
+can only recite commands, you get found out. If you can explain the mental model, you pass.
 
 Commands are given for **RHEL/Rocky/Alma (dnf)** and **Debian/Ubuntu (apt)**. Where they
-differ, both are shown. Kernel behaviour assumes a modern kernel (5.x/6.x) with **systemd**
-and **cgroups v2**.
+differ, both are shown. Assumes a modern kernel (5.x/6.x) with **systemd** and **cgroups v2**.
 
 > Convention in this doc:
 > `#` = run as root, `$` = unprivileged. Placeholders in `<angle brackets>`.
@@ -16,6 +24,7 @@ and **cgroups v2**.
 
 | Part | Topic |
 |---|---|
+| [0](#part-0-start-here--the-mental-model) | **Start Here — The Mental Model** |
 | [1](#part-1-boot--init) | Boot & Init |
 | [2](#part-2-processes--scheduling) | Processes & Scheduling |
 | [3](#part-3-memory) | Memory |
@@ -33,9 +42,281 @@ and **cgroups v2**.
 
 ---
 
+# PART 0: START HERE — THE MENTAL MODEL
+
+Everything later in this document rests on six ideas. Get these and the rest is detail.
+
+## 0.1 What "Linux" actually is
+
+People say "Linux" to mean three different things. Interviewers notice when you blur them.
+
+```text
+┌──────────────────────────────────────────────────────┐
+│  YOU, typing commands                                │
+├──────────────────────────────────────────────────────┤
+│  SHELL          bash / zsh                           │  ← reads what you type
+├──────────────────────────────────────────────────────┤
+│  USERSPACE      ls, systemd, nginx, python           │  ← ordinary programs
+├──────────────────────────────────────────────────────┤
+│  KERNEL         "Linux" proper                       │  ← the only thing that
+│                 memory, CPU time, disks, network     │     touches hardware
+├──────────────────────────────────────────────────────┤
+│  HARDWARE       CPU, RAM, disks, NICs                │
+└──────────────────────────────────────────────────────┘
+```
+
+🔰 **In plain English**
+Think of a restaurant. The **kernel** is the kitchen — it is the only place with access to the
+ingredients (hardware). You are the customer. The **shell** is the waiter who takes your
+order. **Programs** are dishes on the menu. You never walk into the kitchen yourself; you ask
+the waiter, who passes the order through a hatch.
+
+That hatch is called a **system call** (syscall). When a program wants to read a file, it
+cannot touch the disk. It asks the kernel: `read()`. The kernel does it and hands back the
+result. This is why `strace` (which shows syscalls) is such a powerful debugging tool — it
+shows you every request a program makes to the kitchen.
+
+- **The kernel** is Linux. One project, one codebase.
+- **A distribution** (RHEL, Ubuntu, Debian) = the kernel + thousands of userspace programs +
+  a package manager, bundled and tested together.
+- **The shell** is just another program. It is not Linux.
+
+**Why you care:** when something breaks, your first question is always *"which layer?"*
+A permissions error is kernel. A "command not found" is shell. A crash loop is userspace.
+
+## 0.2 Everything is a file
+
+This is the single most important design idea in Unix.
+
+Your keyboard is a file. Your network card is reachable through file-like handles. A running
+process's memory is exposed as files. A disk is a file. Even randomness is a file.
+
+```bash
+$ cat /proc/cpuinfo        # CPU details — not a real file on disk
+$ cat /proc/meminfo        # memory stats
+$ ls /proc/1234/           # everything about process 1234
+$ cat /dev/urandom         # infinite random bytes
+$ echo hi > /dev/pts/3     # write text to someone else's terminal
+```
+
+🔰 **In plain English**
+Instead of inventing a different way to talk to every device, Unix said: *pretend it is all
+files*. Then you only need to learn four verbs — `open`, `read`, `write`, `close` — and they
+work on everything.
+
+It is like a building where every room, lift, and cupboard uses the exact same key. You learn
+one key instead of two hundred.
+
+**Why you care:** this is why `/proc` and `/sys` exist. They are not real files on a disk —
+they are the kernel *pretending* to be files so you can inspect and change it with normal
+tools:
+
+```bash
+$ cat /proc/sys/vm/swappiness     # read a kernel setting
+60
+# echo 10 > /proc/sys/vm/swappiness   # change it, live
+```
+
+That is the whole trick behind `sysctl`.
+
+## 0.3 A process is a running program
+
+A **program** is a file on disk (dead). A **process** is that program loaded into memory and
+running (alive). One program can become many processes — open three terminals, you have three
+`bash` processes from one `/bin/bash` file.
+
+Every process has:
+
+| Property | What it means |
+|---|---|
+| **PID** | Its ID number |
+| **PPID** | Its *parent's* ID — who started it |
+| **UID** | Which user it runs as — this decides what it may touch |
+| **State** | Running, sleeping, waiting for disk, dead |
+| **fds** | Its open files (file descriptors) |
+
+### Where processes come from
+
+There is only one way to make a new process: an existing one **copies itself**.
+
+```text
+     bash (PID 2000)
+        │
+        │  fork()  ── makes a near-identical copy
+        ▼
+     bash (PID 2001)          ← the copy, "the child"
+        │
+        │  exec("/bin/ls")  ── child REPLACES itself with a different program
+        ▼
+     ls   (PID 2001)          ← same PID, totally different program
+```
+
+🔰 **In plain English**
+`fork()` is **cloning yourself**. `exec()` is that clone **putting on a costume** and becoming
+someone else. The PID never changes — the body is the same, the identity is replaced.
+
+So when you type `ls`, bash clones itself and the clone turns into `ls`. When `ls` finishes,
+bash notices and gives you your prompt back.
+
+This explains a lot:
+
+- **Why every process has a parent.** It was cloned by something.
+- **Why PID 1 is special.** Nothing cloned it — the kernel made it directly at boot. On
+  modern systems PID 1 is `systemd`. It is the ancestor of everything.
+- **Why a "zombie" exists.** When a child dies, its exit code is kept until the parent asks
+  for it. Parent forgets to ask → the corpse stays in the table. That is a zombie. (§4)
+
+```bash
+$ ps -ef --forest | head -20     # see the family tree
+```
+
+## 0.4 Users, root, and permissions
+
+Linux decides "may you do this?" by comparing **your UID** with **the file's owner and mode**.
+
+- Every user has a numeric **UID**. Your name is just a label in `/etc/passwd`.
+- **UID 0 is root.** Root bypasses almost every permission check. That is the *only* thing
+  special about it — the name `root` is irrelevant, the number `0` is what matters.
+
+```text
+  -rw-r-----   1  alice  devs   4096  Jan 10 09:14  secrets.txt
+  │ │  │  │       │      │
+  │ │  │  │       │      └── group that owns it
+  │ │  │  │       └───────── user that owns it
+  │ │  │  └──────────────── what EVERYONE ELSE may do   (---  = nothing)
+  │ │  └─────────────────── what the GROUP may do       (r--  = read)
+  │ └────────────────────── what the OWNER may do       (rw-  = read + write)
+  └──────────────────────── type: - file, d directory, l link
+```
+
+🔰 **In plain English**
+Three sets of rules, checked in order: *Are you the owner?* Use the owner's rules and stop.
+*No — are you in the group?* Use the group rules and stop. *Neither?* You get the "other"
+rules.
+
+Note it **stops at the first match**. If you own a file and the owner bits say `---`, you
+cannot read it, even if group says `rwx`. Being the owner is not automatically better.
+
+Numbers are just the three bits added up: `r`=4, `w`=2, `x`=1.
+
+```text
+  7 = rwx      6 = rw-      5 = r-x      4 = r--      0 = ---
+
+  chmod 640 f   →   rw- r-- ---   →   owner reads+writes, group reads, others nothing
+  chmod 755 d   →   rwx r-x r-x   →   owner full, everyone else read+enter
+```
+
+⚠️ **On a directory, the bits mean something different:**
+
+| Bit | On a file | On a directory |
+|---|---|---|
+| `r` | read contents | **list the names** inside |
+| `w` | change contents | **create/delete files** inside |
+| `x` | run it | **enter it** (`cd`, access things inside) |
+
+This is why a directory with `r` but no `x` is useless — you can see the names but cannot
+open anything. And why `w` on a directory lets you **delete a file you do not own**: deleting
+is modifying the *directory*, not the file. (That is exactly what the sticky bit fixes — §25.)
+
+## 0.5 The filesystem is one tree
+
+Windows has `C:\`, `D:\`. Linux has **one** tree starting at `/`. Extra disks get *grafted on*
+at a directory, called **mounting**.
+
+```text
+/                     ← root of everything (not the same as /root)
+├── bin  sbin  lib    → programs and libraries (usually links into /usr)
+├── boot              → kernel + bootloader. Often a SEPARATE small disk partition
+├── dev               → devices as files (/dev/sda, /dev/null)
+├── etc               → ALL system configuration. Text files. Back this up.
+├── home              → users' personal dirs (/home/alice)
+├── proc              → fake dir: live kernel + process info
+├── sys               → fake dir: devices and kernel tunables
+├── run               → runtime state since boot (PID files, sockets). Cleared on reboot.
+├── tmp               → scratch space, world-writable, wiped periodically
+├── usr               → installed software (read-mostly)
+├── var               → data that CHANGES: logs, databases, caches, mail, spool
+└── root              → the root user's home directory
+```
+
+🔰 **In plain English**
+Mounting is like plugging a USB stick into a *folder* instead of getting a new drive letter.
+You say "this disk now appears at `/data`", and from then on everything under `/data` is
+physically on that disk. The folder it covers is called a **mount point**.
+
+```bash
+$ lsblk -f      # which disk is mounted where
+$ findmnt       # the mount tree
+$ df -hT        # how full each mounted filesystem is
+```
+
+**The two directories that cause most outages are `/var` and `/boot`** — `/var` because logs
+grow forever and fill the disk (§17), `/boot` because it is small and old kernels pile up.
+
+## 0.6 How the pieces fit at runtime
+
+```text
+   You type a command
+        │
+        ▼
+   SHELL forks itself, the child execs your program
+        │
+        ▼
+   PROCESS runs. Needs RAM → asks kernel. Needs a file → syscall.
+        │
+        ├── kernel checks PERMISSIONS (your UID vs the file)
+        ├── kernel schedules it onto a CPU (it competes with everything else)
+        ├── kernel gives it MEMORY (and may reclaim some later)
+        └── kernel does the DISK/NETWORK I/O on its behalf
+        │
+        ▼
+   Process exits → parent collects the exit code → PID freed
+```
+
+Almost every problem in this document is one of five things:
+
+| Symptom | Which resource |
+|---|---|
+| Slow, high load | **CPU** — too many processes competing (§39) |
+| Killed unexpectedly | **Memory** — ran out, OOM killer chose a victim (§10) |
+| Slow, waiting | **Disk** — I/O is the bottleneck (§41) |
+| Cannot connect | **Network** — link, route, DNS, firewall or port (§23) |
+| "Permission denied" | **Permissions** — UID, mode, or SELinux (§25, §29) |
+
+When you get a vague ticket that says "the server is slow", your job is to work out *which of
+these five* it is, and then prove it. That is the whole game. Part 9 gives you the commands.
+
+## 0.7 Ten commands to survive your first day
+
+```bash
+pwd                   # where am I
+ls -lh                # what's here (long, human-readable sizes)
+cd /var/log           # go somewhere
+cat file              # print a small file
+less file             # page through a big file  (q to quit, / to search)
+tail -f app.log       # watch a log live  ← you will use this constantly
+grep -r "error" /etc  # search inside files
+ps aux                # what's running
+df -h                 # is the disk full
+systemctl status nginx   # is this service ok
+```
+
+> **When you are stuck:** `man <command>` for the manual, `<command> --help` for a quick
+> reminder, and `apropos <keyword>` to find a command whose name you forgot.
+
+---
+
 # PART 1: BOOT & INIT
 
 ## 1. The Boot Sequence, End to End
+
+🔰 **In plain English**
+Booting is a **chain of handovers**, where each step's only job is to find and start the next,
+slightly bigger step. Like waking up: alarm → you sit up → you stand → you walk → you leave
+the house. Each stage can only do a little, so it loads something more capable and hands over.
+
+The computer starts knowing *nothing* — it cannot even read your disk properly yet. So it
+bootstraps itself in stages, each one teaching it a bit more about the hardware.
 
 Know this cold. It is the single most common senior-level interview question because every
 stage maps to a class of real outage.
@@ -171,6 +452,35 @@ This is a classic practical exam task.
 ---
 
 ## 3. systemd
+
+🔰 **In plain English**
+`systemd` is the **manager** of the machine. It is PID 1 — the first process the kernel
+starts, and the ancestor of everything else.
+
+Think of it as a **restaurant manager opening up for the day**. Lots of jobs need doing:
+unlock the doors, turn on the ovens, start the coffee machine, log the staff in. Some depend
+on others (you cannot brew coffee before the power is on), but many can happen at the same
+time. A good manager works out the dependencies and then starts everything possible in
+parallel.
+
+The old system (SysV init) was a manager who did jobs strictly one at a time in numbered
+order — slow, and if job 12 hung, jobs 13+ never happened. systemd builds a dependency graph
+and runs everything it can simultaneously. That is why modern Linux boots in seconds.
+
+Vocabulary you need:
+
+| Term | Plain meaning |
+|---|---|
+| **unit** | One thing systemd manages (a service, a mount, a timer) |
+| **service** | A program systemd keeps running |
+| **target** | A *milestone*, like "network is up" or "ready for logins" |
+| **enabled** | Start automatically at boot |
+| **started/active** | Running *right now* |
+
+⚠️ **enabled ≠ started.** They are completely independent. A service can be running now but
+not come back after a reboot (started, not enabled) — a classic cause of "it broke after the
+maintenance window". Or enabled but currently stopped. `systemctl enable --now <svc>` does
+both.
 
 ### Unit types
 
@@ -440,6 +750,25 @@ wants it. For hard limits, use cgroups (`CPUQuota=`).
 
 ## 7. cgroups v2
 
+🔰 **In plain English**
+A **cgroup** ("control group") is a **box you put processes in, with a meter and a limit on
+it**. It answers two questions: *how much is this group using?* and *what is the most it is
+allowed?*
+
+Without cgroups, every process competes freely and one runaway job can starve the whole
+machine. With cgroups you can say: "this group of processes may use at most 2 GB of RAM and
+1.5 CPUs." If they exceed the memory cap, they get killed — and **nothing else on the box is
+affected**.
+
+This is the foundation of two things you use daily:
+- **systemd** puts every service in its own cgroup automatically (that is how
+  `MemoryMax=`/`CPUQuota=` work).
+- **Containers** are essentially "a process in a cgroup, in namespaces" (§12).
+
+⚠️ This is why a container can be killed for running out of memory while the host has plenty
+free — it hit *its own box's* limit, not the machine's. Confusing these two is one of the most
+common production misdiagnoses (§10).
+
 cgroups are the mechanism behind both systemd resource control and containers.
 
 ```bash
@@ -476,6 +805,34 @@ cat pids.current
 # PART 3: MEMORY
 
 ## 8. The Memory Model
+
+🔰 **In plain English**
+Linux deliberately uses **almost all your RAM, almost all the time** — and this alarms people
+who then "fix" a problem that does not exist.
+
+Here is the idea. Reading from disk is roughly 1,000× slower than reading from RAM. So when
+Linux reads a file, it keeps a copy in spare RAM in case you want it again. That copy is the
+**page cache**. If you do read the file again, it comes from memory — instantly.
+
+Think of it as a **kitchen worktop**. The cupboard is your disk; the worktop is RAM. A good
+cook leaves ingredients they are using out on the worktop rather than returning them to the
+cupboard after every step. A worktop that is bare is not "tidy" — it is wasted space.
+
+Now the key part: **if you suddenly need worktop space, you just sweep the ingredients back
+into the cupboard. Instantly.** That is what "reclaimable" means. Cached memory is not really
+"used" — it is *borrowed*, and the kernel takes it back the moment a program needs it.
+
+So:
+
+| Column in `free -h` | What it really means |
+|---|---|
+| `used` | Genuinely taken by programs |
+| `buff/cache` | Borrowed for speed — **available on demand** |
+| `free` | Completely untouched — **doing nothing useful** |
+| `available` | **used + cache the kernel can hand back** ← the only number that matters |
+
+⚠️ **"Free memory is low" is not a problem.** Low `free` with healthy `available` is a system
+working exactly as designed. Only `available` running low means real memory pressure.
 
 ```text
  Total RAM
@@ -520,6 +877,30 @@ ps -eo pid,comm,rss,vsz --sort=-rss | head
 
 ## 9. Swap & Swappiness
 
+🔰 **In plain English**
+**Swap is disk space used as pretend RAM.** When memory gets tight, the kernel takes pages
+that have not been touched in a while and parks them on disk, freeing real RAM for things
+being used right now.
+
+It is an **overflow car park**. The main car park (RAM) is close and fast. When it fills, you
+start parking in the overflow half a mile away (disk). Cars still fit — but anyone who needs
+one of those has a long walk.
+
+That walk is the catch: disk is around 1,000× slower than RAM. A little swapping is healthy
+housekeeping. **Heavy, continuous swapping ("thrashing") makes a machine feel frozen** — it
+spends all its time shuffling pages instead of doing work. A box that is swapping hard is
+often *less* responsive than one that OOM-kills a process and moves on.
+
+⚠️ **`vm.swappiness` is the most misunderstood tunable in Linux.** It is **not** "swap when
+RAM is N% full."
+
+It is a *preference dial* between two ways of freeing memory: throw away cached file data, or
+swap out application memory. Low value = "leave my apps alone, drop the cache first."
+High value = "keep the cache, page the apps out."
+
+And `swappiness=0` does **not** disable swap. Under real pressure the kernel will still swap
+rather than start killing processes. If you want no swap, remove the swap device.
+
 ```bash
 swapon --show
 cat /proc/sys/vm/swappiness      # default 60
@@ -546,6 +927,31 @@ echo '/swapfile none swap sw 0 0' >> /etc/fstab
 ```
 
 ## 10. The OOM Killer
+
+🔰 **In plain English**
+When Linux genuinely runs out of memory and cannot free any more, it has a horrible choice:
+freeze the whole machine, or **kill one program to save the rest**. It picks the second.
+
+The "OOM killer" is the kernel doing triage. It scores every process — roughly *"how much
+memory would I get back, and how important is this?"* — and kills the highest scorer.
+
+The cruel part: it usually kills **your biggest, most important process**, because that is the
+one holding the most memory. Your database is a much more attractive target than a small
+shell script. This is why the OOM killer feels like it always picks the worst option — it is
+optimising for reclaiming memory, not for what you care about.
+
+You can bias the decision with `oom_score_adj` (−1000 = never kill me, +1000 = kill me first).
+
+⚠️ **The distinction that matters in an interview:** there are *two* kinds of OOM.
+
+| | What happened | Where to look |
+|---|---|---|
+| **System OOM** | The whole machine ran out of RAM | `dmesg`, `free -h` |
+| **cgroup OOM** | *One service/container* hit **its own limit** while the host was fine | `memory.events` in its cgroup |
+
+If a container dies with "OOMKilled" but the host shows 20 GB free, it is the second kind.
+Adding RAM to the server will not help — you need to raise that service's `MemoryMax`, or fix
+the app.
 
 When the kernel cannot reclaim enough, it picks a victim.
 
@@ -661,6 +1067,39 @@ partprobe /dev/sdb     # re-read partition table without reboot
 ```
 
 ## 14. LVM — End to End
+
+🔰 **In plain English**
+Normally a partition is a fixed slice of one disk. If you guess the size wrong, you are stuck
+— you cannot grow it past the end of the disk, and you cannot make it span two disks.
+
+**LVM fixes this by adding a middle layer.** Instead of carving filesystems directly out of
+disks, you throw the disks into a shared **pool**, then hand out slices from the pool.
+
+The water analogy:
+
+```text
+  Physical Volumes (PV)  =  bottles of water you pour in   (/dev/sdb1, /dev/sdc1)
+            ↓
+  Volume Group    (VG)  =  the TANK they all pour into     (vg_data)
+            ↓
+  Logical Volumes (LV)  =  glasses you pour out of the tank (lv_app, lv_logs)
+            ↓
+  Filesystem            =  what you actually drink from     (XFS / ext4)
+```
+
+Why this is worth the extra concept:
+
+- **Grow a filesystem while it is in use.** Add a disk to the tank, top up the glass. No
+  downtime, no reboot.
+- **A filesystem can span multiple physical disks.** The tank does not care which bottle the
+  water came from.
+- **Snapshots** — freeze a moment in time for a consistent backup.
+
+⚠️ **Growing is always two steps**, and forgetting the second is the classic beginner error:
+1. Make the **glass** bigger — `lvextend`
+2. Tell the **filesystem** it now has more room — `xfs_growfs` / `resize2fs`
+
+The `-r` flag on `lvextend` does both for you. Use it.
 
 LVM is the single most important storage skill for an enterprise Linux admin.
 
@@ -822,6 +1261,37 @@ mdadm /dev/md0 --add /dev/sdf1
 
 ## 17. Disk Full: Space vs Inodes
 
+🔰 **In plain English**
+A filesystem can run out of space in **two independent ways**, and the error message is the
+same for both — which is why this confuses people.
+
+Picture a **library**:
+
+- **Blocks** = the *shelves*. Where the actual book contents go.
+- **Inodes** = the *index cards*. One card per book, holding its title, author, size,
+  permissions, and which shelves hold it.
+
+You can run out of shelf space (huge books). But you can *also* run out of index cards while
+shelves sit empty — if you store a million pamphlets, each one still needs its own card.
+
+That is inode exhaustion: **millions of tiny files**. `df -h` says you have 40 GB free;
+writing a file still fails with "No space left on device". Always check both:
+
+```bash
+df -h     # shelves
+df -i     # index cards
+```
+
+⚠️ **The third case that fools everyone:** `df` says the disk is 100% full, but `du` adds up
+to far less. Nothing is lying. A program still has a **deleted file open**.
+
+When you delete a file, Linux removes its *name*, but keeps the data until every program that
+has it open closes it. Log rotation deletes `app.log`, but the app is still writing to the
+now-nameless file. `du` walks names, so it cannot see it. `df` asks the filesystem, which
+still counts the blocks.
+
+Find it with `lsof +L1` and restart the process — or truncate the file descriptor in place.
+
 ```bash
 df -h          # blocks
 df -i          # INODES  <-- "No space left on device" with free space = inode exhaustion
@@ -926,6 +1396,32 @@ ip rule show                      # policy routing rules
 `ip route get` is the fastest way to answer "why is traffic leaving the wrong NIC?"
 
 ## 20. Sockets & Ports
+
+🔰 **In plain English**
+A **port** is a numbered door on a machine. The IP address gets you to the building; the port
+number gets you to the right door. Web traffic knocks on 80/443, SSH on 22, PostgreSQL on 5432.
+
+A program that wants to receive connections **listens** on a port — it sits behind that door
+waiting for knocks. Only one program can hold a given door at a time, which is why starting a
+second service on a taken port fails with "address already in use".
+
+`ss -tulpn` is the command that shows you every door currently being watched, and by whom.
+
+A **connection** is identified by four things together: *source IP, source port, destination
+IP, destination port*. That is why thousands of people can all connect to your port 443 at
+once — each has a different source port, so every connection is unique.
+
+⚠️ **The one that matters in interviews** — connections do not vanish the instant they close,
+and two leftover states mean very different things:
+
+| State | Plain meaning | Is it a problem? |
+|---|---|---|
+| `TIME_WAIT` | *You* hung up first. The OS waits ~60s in case stray packets are still arriving. | **No.** Normal, self-clearing. |
+| `CLOSE_WAIT` | *They* hung up, and your application **never picked up the receiver** | **Yes — application bug.** |
+
+`CLOSE_WAIT` piling up means your code is not calling `close()` on its sockets. No kernel
+tuning fixes that; the file descriptors leak until the process hits its limit and starts
+refusing connections.
 
 ```bash
 ss -tulpn                  # TCP+UDP listening, with PID  <-- the workhorse
@@ -1289,6 +1785,40 @@ Resource limits via `pam_limits` (`/etc/security/limits.conf`):
 
 ## 29. SELinux
 
+🔰 **In plain English**
+Normal Linux permissions ask: **"who are you?"** If you own the file, you may write it.
+SELinux adds a second, stricter question: **"regardless of who you are, is this program
+*supposed* to do that?"**
+
+An analogy: file permissions are the **key to a room**. SELinux is a **job description**. A
+cleaner may have a master key to every room in the building — but their job description says
+"cleaning only". If the cleaner starts reading files in the finance office, they are stopped,
+even though the key worked.
+
+So SELinux confines a program to what that *type* of program normally does. If your web server
+is compromised, the attacker gets a shell running as the web server — and SELinux still will
+not let it read `/etc/shadow` or open random network connections, because web servers do not
+do that.
+
+Everything gets a **label** (a "type"): `httpd_t` for the web server process,
+`httpd_sys_content_t` for files it is allowed to serve. The rules are between *labels*, not
+users.
+
+**That is why SELinux problems almost always look like this:** you copied a file into
+`/var/www`, permissions are `644` and owned by the right user, and the web server *still*
+gets "Permission denied". The file kept the label from where it came from, so as far as
+SELinux is concerned it is not web content.
+
+The fix is to correct the **label**, not to turn SELinux off:
+
+```bash
+restorecon -Rv /var/www          # reset labels to what policy says they should be
+```
+
+⚠️ Setting `SELINUX=disabled` "to make it work" is the reflex to unlearn. It is the answer
+that ends interviews. Read the denial (`ausearch -m AVC -ts recent`), then fix the label, the
+port, or the boolean.
+
 Do not disable it. Knowing SELinux is a differentiator.
 
 ```bash
@@ -1589,6 +2119,36 @@ Rules of thumb:
 - `st` > 0 → **hypervisor stealing CPU**; you're a noisy-neighbour victim.
 
 ## 39. Load Average
+
+🔰 **In plain English**
+Load average is **how long the queue is**, not how busy the CPU is. Those are different
+things, and mixing them up is the most common misreading in Linux.
+
+Think of **checkouts at a supermarket**. Load average counts everyone *being served* plus
+everyone *waiting in line*. So:
+
+- Load **4** on a **4-core** machine = 4 checkouts, 4 customers. Perfectly busy, no queue.
+- Load **16** on a **4-core** machine = 4 checkouts, 16 customers. Three-quarters are waiting.
+
+**So the number is meaningless until you divide by `nproc`.** "Load is 8" is not a fact you
+can act on. "Load is 8 on 4 cores" is.
+
+The three numbers are the last **1, 5 and 15 minutes**, which tell you the *direction*:
+
+```text
+load average: 8.42, 6.15, 4.03     ← rising fast. Getting worse.
+load average: 4.03, 6.15, 8.42     ← falling. Already recovering.
+```
+
+⚠️ **The Linux-specific twist that interviewers probe:** on Linux, load counts processes
+waiting for **disk/network I/O** as well as CPU (state `D`). On most other Unixes it does not.
+
+So you can see **load 50 with a 98% idle CPU**. That is not a contradiction — it means 50
+processes are stuck waiting on storage, usually a hung NFS mount or a dead SAN path. Adding
+CPUs would do nothing. The queue is at the *disk*, not the till.
+
+That single insight is worth memorising: **high load + idle CPU = I/O problem, not a CPU
+problem.**
 
 ```bash
 $ uptime
@@ -2482,6 +3042,106 @@ Before an interview, be able to do each of these without notes:
 - [ ] Trace a connection failure from L1 to L4 with the right tool at each layer
 - [ ] Write a `set -Eeuo pipefail` script with locking and traps
 - [ ] Explain namespaces + cgroups as the definition of a container
+
+---
+
+## Appendix A: Jargon Decoder
+
+Every term in this document, in one line of plain English.
+
+| Term | Plain English |
+|---|---|
+| **kernel** | The core of Linux. The only code that talks to hardware. |
+| **userspace** | Every normal program. Must ask the kernel for anything real. |
+| **syscall** | A program's request to the kernel ("open this file"). |
+| **shell** | The program that reads your typed commands (bash). |
+| **process** | A running program. |
+| **PID** | A process's ID number. |
+| **parent / child** | Every process is started by another. PID 1 is the ancestor of all. |
+| **fork** | A process cloning itself. |
+| **exec** | A process replacing itself with a different program. |
+| **zombie** | A dead process whose parent never collected its exit code. |
+| **daemon** | A program that runs in the background forever (e.g. `sshd`). |
+| **signal** | A short message to a process ("stop", "reload"). |
+| **SIGTERM / SIGKILL** | "Please stop" (can be handled) / "Die now" (cannot). |
+| **file descriptor (fd)** | A number a process uses to refer to an open file/socket. |
+| **inode** | The index card holding a file's metadata and block locations. |
+| **hard link** | A second name for the same inode. |
+| **symlink** | A file whose contents are a path to another file. |
+| **mount** | Attaching a disk into the directory tree at some folder. |
+| **mount point** | The folder a disk is attached at. |
+| **filesystem** | The format used to organise files on a disk (ext4, XFS). |
+| **block** | The smallest chunk of disk a file occupies. |
+| **partition** | A fixed slice of a physical disk. |
+| **LVM** | A layer letting you pool disks and resize volumes live. |
+| **PV / VG / LV** | Bottle / tank / glass, in LVM terms. |
+| **page cache** | Spare RAM holding recently-read file data, for speed. |
+| **swap** | Disk space used as slow overflow RAM. |
+| **OOM killer** | The kernel killing a process when memory truly runs out. |
+| **load average** | Processes running *plus waiting*, averaged over 1/5/15 min. |
+| **cgroup** | A box around processes with usage meters and limits. |
+| **namespace** | A private view of the system (own PIDs, own network). |
+| **container** | Processes in namespaces + cgroups. Not a VM. |
+| **systemd** | PID 1. Starts and supervises everything. |
+| **unit** | One thing systemd manages. |
+| **target** | A systemd milestone, e.g. "ready for logins". |
+| **enabled vs started** | Starts at boot vs running right now. **Independent.** |
+| **root / UID 0** | The superuser. Bypasses permission checks. |
+| **sudo** | Run one command as another user, with an audit trail. |
+| **umask** | The permissions *removed* from newly created files. |
+| **setuid** | A program that runs as its owner, not as you. |
+| **sticky bit** | On a shared dir: only the owner may delete their own files. |
+| **ACL** | Extra per-user permissions beyond owner/group/other. |
+| **SELinux** | Rules about what a *program type* may do, on top of permissions. |
+| **AVC denial** | An SELinux "no", logged in the audit log. |
+| **PAM** | The pluggable framework every login goes through. |
+| **port** | A numbered door on a machine (22 = SSH). |
+| **socket** | One endpoint of a network connection. |
+| **TIME_WAIT** | You closed first; harmless waiting period. |
+| **CLOSE_WAIT** | They closed, your app never did. **App bug.** |
+| **MTU** | Largest packet size a link accepts (usually 1500). |
+| **DNS** | Turns names into IP addresses. |
+| **default gateway** | The router you send traffic to when you don't know the way. |
+| **initramfs** | A tiny temporary root filesystem used during boot. |
+| **GRUB** | The bootloader that loads the kernel. |
+| **repository** | A server holding installable packages. |
+| **idempotent** | Safe to run repeatedly; the 2nd run changes nothing. |
+
+---
+
+## Appendix B: A Learning Path
+
+Do not read this document front to back. Work in this order:
+
+**Week 1 — Ground yourself**
+[Part 0](#part-0-start-here--the-mental-model) in full. Then §4 (processes), §25
+(permissions), §0.5 (the tree). Practise in a VM: create users, break permissions, fix them.
+
+**Week 2 — The daily job**
+§3 systemd, §34 journald, §31/32 packages. Install nginx, break its config, read the logs,
+fix it. Write one unit file from scratch.
+
+**Week 3 — Storage & memory**
+§8 memory model, §14 LVM, §15 filesystems. Add a virtual disk to your VM, make it a PV, build
+a VG/LV, mount it by UUID, then grow it online. Then fill a disk deliberately and use §17 and
+[R3](#r3-disk-full) to recover.
+
+**Week 4 — Networking**
+§18–23. Break DNS on purpose. Block a port with the firewall and prove it with `tcpdump`.
+Walk [R7](#r7-network-unreachable) end to end.
+
+**Week 5 — Performance**
+§37–42. Run `stress-ng` to create load, then diagnose it with `vmstat`, `iostat -x` and
+`pidstat` *without* knowing in advance what you started.
+
+**Week 6 — Interview drilling**
+[Part 13](#part-13-end-to-end-runbooks) runbooks out loud, then
+[Part 14](#part-14-interview-preparation). Say the answers aloud — explaining is a separate
+skill from knowing.
+
+> **Build a lab.** Two VMs (VirtualBox/KVM/multipass) and a snapshot before each experiment.
+> You learn this by breaking things and recovering, not by reading. Everything in Part 13
+> can be reproduced deliberately in a VM in under ten minutes.
 
 ---
 
