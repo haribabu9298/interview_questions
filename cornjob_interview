@@ -1,0 +1,20 @@
+# import subprocess
+# subprocess.run("ssh" , "-i" , "bpi-devops.pem" , "10.20.30.40.50")
+# out=subprocess.run("df -h")
+# print(f"{out}")
+
+find / -name "*.log" --timestamp=7 | grep -i "hari"
+xargs
+
+manually script is fine , corn job excution is failing
+    difrent paths, working directory,varaibles missing,permmissions
+login to multiple 100 servers at a time
+    The Power-User GUI Way (MobaXterm Multi-Execution)
+find log files where the word is hari is matching
+    find / -type f -name "*.log" -mtime -7 -exec grep -il "hari" {} + 2>/dev/null
+corn job overlap 
+    Solution: Use flock in cron
+    Suppose your backup script takes 15 minutes to finish, but cron runs it every 10 minutes.
+    Without a lock, the second execution can start while the first is still running.
+    Use:
+    */10 * * * * /usr/bin/flock -n /tmp/backup.lock /bin/bash /opt/scripts/backup.sh >> /var/log/backup.log 2>&1
