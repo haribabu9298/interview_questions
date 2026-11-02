@@ -264,6 +264,9 @@ terraform move from one module to another another module
 terraform apply fails halfway
 terraform count vs for_each , if some value deletes what will happen
 terraform failure how will u find 
+cornjob timeout
+find a file and grep a word in that file
+cornjob overlap
 
 
 
