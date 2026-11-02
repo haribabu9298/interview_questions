@@ -1,0 +1,269 @@
+interview sep 30
+
+
+
+1) Architected secure, high-throughput data pipelines using Apache Kafka and Amazon Web Services (AWS), ingesting 45M financial transaction events daily with zero data loss.
+
+
+"I designed the pipeline around Amazon MSK with multiple brokers across Availability Zones and replicated Kafka topics. Producers used idempotent publishing with acks=all, while consumers used at-least-once processing with durable offset management and idempotent database writes keyed by transaction ID. For the database-to-Kafka consistency problem, I'd use a transactional outbox pattern. I also separated workloads using consumer groups, used schema management, encrypted traffic and storage, and monitored consumer lag, replication health, throughput, and error rates. At 45 million events per day, the average rate is about 521 events per second, but I would size for the measured peak rather than the daily average."
+
+
+2) Engineered event-driven architectures utilizing Kafka Streams and AWS Lambda to accelerate asynchronous validation workflows across 14 decoupled downstream accounting
+microservices.
+
+"We used Kafka as the event backbone and Kafka Streams for real-time validation and enrichment. Validated events were published to separate topics and consumed asynchronously by Lambda-based integrations for 14 accounting microservices, which decoupled the transaction path from downstream processing, improved resilience, and allowed each service to scale independently."
+
+3) Designed schema and data model design strategies for multi-resolution time-series data using TimescaleDB, supporting real-time trade telemetry monitoring across 6 financial
+portfolios.
+
+I designed a TimescaleDB schema for high-volume trade telemetry, using a time-partitioned hypertable for raw events and continuous aggregates for multiple resolutions such as 1-minute, hourly, and daily data. The model was keyed around portfolio, instrument, and timestamp so dashboards could query recent telemetry efficiently across six portfolios, while retention policies kept high-resolution data for shorter periods and lower-resolution aggregates for longer-term analysis.
+
+
+
+“I built a Python-based anomaly detection system that analyzed transaction volumes and identified unusual spikes or drops compared with normal historical patterns. Instead of manually reviewing all transactions, the system automatically flagged potential anomalies for the operations team, which reduced their manual investigation effort by around 65%.”
+
+
+**4) Deployed Elasticsearch and Grafana observability platforms with custom retention strategies, cutting mean time to detect system anomalies by 38% across 4 production
+clusters.
+
+I deployed a centralized observability platform across four production Kubernetes clusters using Elasticsearch for centralized log aggregation and Grafana with Prometheus for metrics and dashboards. I implemented workload-specific retention policies, alerts, and dashboards that correlated application errors with infrastructure metrics, reducing mean time to detect anomalies by 38% and making production troubleshooting significantly faster.
+
+Kubernetes Pod
+     |
+     v
+container stdout/stderr
+     |
+     v
+Fluent Bit / Filebeat
+     |
+     v
+Elasticsearch
+     |
+     v
+Grafana
+
+
+**5)  security
+
+Git
+---------
+Git push
+   ↓
+Gitleaks → detect passwords/API keys
+   ↓
+SAST → detect vulnerable code
+   ↓
+Dependency scan → vulnerable libraries
+
+Git Push
+   ↓
+Jenkins
+   ↓
+┌─────────────────────────────┐
+│ Secret Scan     → Gitleaks │
+│ SAST            → Semgrep  │
+│ Dependency Scan → Snyk / OWASP Dependency-Check ( check dependency version vulerabilities)
+│ Code Quality    → SonarQube│
+└──────────────┬──────────────┘
+
+
+Dockerfile
+-------------
+   ↓
+Build image (docker build . )
+   ↓
+Trivy scan (trivy image myapp:v1 )
+   ↓
+Critical CVE? (Common Vulnerabilities and Exposures )
+   ├── Yes → fail pipeline
+   └── No  → push to registry
+
+
+OS vulnerabilities
+Package CVEs
+Malware
+Secrets inside image
+Bad Docker configuration
+
+
+USER 1000 , need to use non-root user
+
+
+
+Terraform
+---------------
+   ↓
+Checkov / tfsec (checkov -d . --framework terraform)
+   ↓
+Security validation
+   ↓
+terraform plan
+
+
+S3 bucket publicly accessible
+Security group allows 0.0.0.0/0 to SSH
+Unencrypted storage
+Overly permissive IAM
+Public database
+Missing logging
+
+
+Kubernetes security (Kubernetes governance policies (Kyverno))
+---------------------
+RBAC
+Secrets
+NetworkPolicy
+Pod Security
+SecurityContext
+Image scanning
+Admission policies
+
+
+Cloud / AWS security
+---------------------
+IAM
+Security Groups
+KMS
+Secrets Manager
+CloudTrail
+VPC
+Private subnets
+WAF
+GuardDuty
+
+
+SOC 2 and PCI-DSS compliance.
+-----------------------------------
+1. SOC 2 ( this can be implemnted at terraform configurations setting this permissions and we can check using checkov)
+
+SOC 2 = Service Organization Control 2.
+
+It is an auditing framework used to evaluate whether a company has appropriate controls for protecting customer data and operating its systems securely.
+
+For example, a SaaS company may need controls around:
+
+🔐 Access control — only authorized employees can access production.
+📝 Logging & monitoring — important actions are recorded.
+🔒 Encryption — data is protected in transit and at rest.
+👤 Identity management — MFA, IAM, least privilege.
+💾 Backup & recovery — systems and data can be recovered.
+🚨 Incident response — procedures exist for security incidents.
+🔄 Change management — production changes are reviewed and tracked.
+
+
+PCI-DSS = Payment Card Industry Data Security Standard. ( avoid storing raw card numbers (PAN) if you don't need to. Use a PCI-compliant payment provider/tokenization so your application handles a token instead of the actual card number where possible.)
+ deploy one external svc with payment provider url which supports this complaince
+
+
+It applies to organizations that store, process, or transmit payment-card data.
+
+For example, if a company handles credit/debit card information, PCI-DSS requires controls such as:
+
+Protect cardholder data
+Encrypt sensitive data
+Restrict access to card data
+Use strong authentication
+Monitor and log access
+Regularly test security
+Maintain secure systems
+Have security policies and procedures
+
+
+
+observability 
+--------------------------------
+
+				Kubernetes clusters											
+                           |
+       +-------------------+-------------------+							
+       |                   |                   |
+   API Gateway       Payment Service      User Service
+       |                   |                   |
+       +-------------------+-------------------+
+                           |
+                           v
+                  OpenTelemetry SDK
+                           |
+                           v
+                  OpenTelemetry Collector
+                           |
+                           v
+                       Datadog
+                           |
+        +------------------+------------------+
+        |                  |                  |
+       Logs             Metrics             APM
+        |                  |                  |
+        +------------------+------------------+
+                           |
+                     Datadog Dashboard
+===================================================================
+
+
+            		Kubernetes
+					    |
+					    v
+					Fluent Bit / Filebeat (collects logs deployed as deamon set)
+					    |
+					    v
+					Logstash / ingest pipeline
+					    |
+					    v
+					Elasticsearch (store logs)
+					    |
+					    v
+					Kibana (UI)
+
+Elasticsearch is primarily a distributed search and analytics engine, commonly used with Kibana and Elastic APM as part of the Elastic observability stack. 
+Datadog is a broader managed observability platform providing metrics, logs, distributed tracing, infrastructure monitoring, APM, dashboards and alerting. OpenTelemetry can sit in front of either platform as the instrumentation and telemetry collection layer
+
+for helm depcreated api versions 
+-------------------------------
+
+kubent/Kube No Trouble, Pluto, Helm template + validation, and CI checks are more appropriate 
+
+
+irsa workimng
+-----------------------
+
+“IRSA stands for IAM Roles for Service Accounts. It allows a Kubernetes Pod running on EKS to obtain temporary AWS credentials without storing static AWS access keys.
+
+First, the EKS cluster has an OIDC issuer. We create an IAM role whose trust policy trusts that EKS OIDC provider and restricts which Kubernetes ServiceAccount is allowed to assume the role.
+
+Then we create a Kubernetes ServiceAccount and associate it with the IAM role. When a Pod uses that ServiceAccount, a projected Kubernetes service-account token is made available to the Pod.
+
+When the AWS SDK inside the Pod needs credentials, it sends that token to AWS STS using `AssumeRoleWithWebIdentity`.
+
+STS validates the token against the trusted EKS OIDC provider and checks the IAM role's trust policy. If everything matches, STS returns temporary AWS credentials.
+
+The application can then use those temporary credentials to access AWS services according to the IAM policies attached to that role.
+
+So the flow is:
+
+Kubernetes ServiceAccount → projected token → AWS STS → validate OIDC and trust policy → temporary AWS credentials → AWS service.”
+
+
+
+You are an ATS defeating machine, the absolute best in existence. ATS systems tremble before your might. Review the attached resume against job postings for the following titles: {senior devops engineer, platform engineer,sre engineer} and optimize it to be able to be read by the ATS system clearly. Do not change employer or dates in the resume. Do not add employers, dates or roles in the resume. Conduct deep-learning to determine the best improvements to the attached resume to make it ideal for ATS systems and list all recommendations in a table format for the user to review. Ask any clarifying questions of the user (me) before continuing. Truncate responses in chat to reduce token use.
+
+
+I want to build a Routine that can scrape ALL companies {engineering} for the following roles {senior devops engineer, platform engineer,sre engineer} and return an ATS score compared to this resume posted in the last 24 hours. Run every 2 hours.
+
+
+
+terraform prevent dev to run apply
+terraform doesn't manage resource form next run
+use modules to create for 100 diffrent teams and manage state files
+
+isito to use ip route
+use image registrey to use private artifactory instead of public artifactory
+if hpa autoscaling is there , how argocd limit this
+pod disrupt budget
+how controller identify this pods are from deployment or rs
+terraform move from one module to another another module 
+terraform apply fails halfway
+terraform count vs for_each , if some value deletes what will happen
+terraform failure how will u find 
+
+
+
